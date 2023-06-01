@@ -1,14 +1,13 @@
 import os
 import glob
 
-from utils import authenticate, generate_file_hash, generate_string_hash, users, file_owners
+from utils import authenticate, generate_file_hash, generate_string_hash
+from config import db, storage_directory
 
 from flask import Flask, request, jsonify, send_file
 from functools import wraps
 
 app = Flask(__name__)
-
-storage_directory = 'store'
 
 
 def requires_auth(f):
@@ -29,10 +28,10 @@ def requires_auth(f):
 def create_user():
     auth_data = request.authorization
     username, password = generate_string_hash(auth_data['username']), generate_string_hash(auth_data['password'])
-    if username in users:
+    if db.get_user(username):
         return jsonify({'message': 'The user with this username already exists'}), 400
 
-    users[username] = password
+    db.add_user(username, password)
 
     return jsonify({'message': 'The user was created successfully'}), 201
 
@@ -55,9 +54,12 @@ def upload_file():
     os.makedirs(subdirectory_path, exist_ok=True)
 
     file_path = os.path.join(subdirectory_path, final_filename)
+    if os.path.exists(file_path):
+        return jsonify({'message': 'The file already exists in storage'}), 400
+
     file.save(file_path)
 
-    file_owners[file_hash] = request.authorization['username']
+    db.add_file(file_hash, generate_string_hash(request.authorization['username']))
 
     return jsonify({'hash': file_hash}), 200
 
@@ -70,9 +72,12 @@ def delete_file(file_hash):
     file_paths = glob.glob(os.path.join(subdirectory_path, file_hash + '.*'))
     if not file_paths:
         return jsonify({'message': 'File not found'}), 404
-    if request.authorization['username'] != file_owners[file_hash]:
+
+    hashed_username = generate_string_hash(request.authorization['username'])
+    if (file_hash,) not in db.get_user_files(hashed_username):
         return jsonify({'message': 'You aren\'t permitted to delete this file'}), 400
 
+    db.delete_file(file_hash)
     os.remove(file_paths[0])
     if not os.listdir(subdirectory_path):
         os.rmdir(subdirectory_path)

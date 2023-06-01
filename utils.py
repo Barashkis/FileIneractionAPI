@@ -1,7 +1,6 @@
 import hashlib
 
-users = {}
-file_owners = {}
+from config import db
 
 
 def generate_string_hash(credential):
@@ -10,9 +9,8 @@ def generate_string_hash(credential):
 
 def authenticate(auth_data):
     username, password = generate_string_hash(auth_data['username']), generate_string_hash(auth_data['password'])
-    if username in users:
-        if users[username] == password:
-            return True
+    if (username, password,) == db.get_user(username):
+        return True
 
     return False
 
